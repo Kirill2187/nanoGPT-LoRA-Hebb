@@ -62,6 +62,7 @@ lora_dropout = 0.0
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
+early_stopping = 0 # stop after how many iters with no validation loss improvement (disables if 0)
 weight_decay = 1e-1
 beta1 = 0.9
 beta2 = 0.95
@@ -221,7 +222,7 @@ if block_size < model.config.block_size:
 model.to(device)
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+scaler = torch.amp.GradScaler("cuda", enabled=(dtype == 'float16'))
 
 # optimizer
 optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
@@ -278,6 +279,7 @@ if wandb_log and master_process:
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
+no_improvement_iters = 0 # for early stopping
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
 while True:
@@ -312,6 +314,10 @@ while True:
                 }
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+        if losses['val'] > best_val_loss:
+            no_improvement_iters += 1
+        else:
+            no_improvement_iters = 0
     if iter_num == 0 and eval_only:
         break
 
@@ -357,7 +363,7 @@ while True:
     local_iter_num += 1
 
     # termination conditions
-    if iter_num > max_iters:
+    if iter_num > max_iters or (early_stopping > 0 and no_improvement_iters >= early_stopping):
         break
 
 if ddp:
