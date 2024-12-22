@@ -13,16 +13,17 @@ init_from = 'gpt2' # 124M GPT-2
 # only save checkpoints if the validation loss improves
 always_save_checkpoint = False
 
-batch_size = 1
-gradient_accumulation_steps = 32
+batch_size = 8
+gradient_accumulation_steps = 4
 max_iters = 100000
 early_stopping = 5
 
-learning_rate = 3e-4
+learning_rate = 1e-4
 decay_lr = False
 
 compile = False
 
-lora_rank = 8
+lora_rank = 16
 lora_alpha = 32
 lora_dropout = 0
+lora_matrices = "qv"

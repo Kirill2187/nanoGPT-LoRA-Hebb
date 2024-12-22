@@ -59,6 +59,7 @@ bias = False # do we use bias inside LayerNorm and Linear layers?
 lora_rank = 0
 lora_alpha = 0.0
 lora_dropout = 0.0
+lora_matrices = ""
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
@@ -170,12 +171,13 @@ elif init_from == 'resume':
     checkpoint_model_args = checkpoint['model_args']
     # force these config attributes to be equal otherwise we can't even resume training
     # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'lora_rank', 'lora_alpha']:
+    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'lora_rank', 'lora_alpha', 'lora_matrices']:
         model_args[k] = checkpoint_model_args.get(k, 0)
     if lora_rank > 0:
         model_args['lora_rank'] = lora_rank
         model_args['lora_alpha'] = lora_alpha
         model_args['lora_dropout'] = lora_dropout
+        model_args['lora_matrices'] = lora_matrices
     # create the model
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)

@@ -33,21 +33,24 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
-        self.c_attn = LoRALinear(
-            in_features=config.n_embd,
-            out_features=3 * config.n_embd,
-            bias=config.bias,
-            lora_rank=config.lora_rank,
-            lora_alpha=config.lora_alpha,
-            lora_dropout=config.lora_dropout
-        )
+        self.lora_matrices = config.lora_matrices
+        
+        for name in 'qkv':
+            setattr(self, f'{name}', LoRALinear(
+                in_features=config.n_embd,
+                out_features=config.n_embd,
+                bias=config.bias,
+                lora_rank=config.lora_rank if name in config.lora_matrices else 0,
+                lora_alpha=config.lora_alpha,
+                lora_dropout=config.lora_dropout
+            ))
+        
         # output projection
         self.c_proj = LoRALinear(
             in_features=config.n_embd,
             out_features=config.n_embd,
             bias=config.bias,
-            lora_rank=config.lora_rank,
+            lora_rank=config.lora_rank if 'o' in config.lora_matrices else 0,
             lora_alpha=config.lora_alpha,
             lora_dropout=config.lora_dropout
         )
@@ -69,7 +72,7 @@ class CausalSelfAttention(nn.Module):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        q, k, v  = self.q(x), self.k(x), self.v(x)
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -134,6 +137,7 @@ class GPTConfig:
     lora_rank: int = 0
     lora_alpha: float = 0.0
     lora_dropout: float = 0.0
+    lora_matrices: str = "qv"
 
 class GPT(nn.Module):
 
@@ -273,12 +277,25 @@ class GPT(nn.Module):
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
         # this means that we have to transpose these weights when we import them
         if config.lora_rank == 0:
-            assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+            target_keys = len(sd_keys_hf) + 4 * config.n_layer
+            assert target_keys == len(sd_keys), f"mismatched keys: {target_keys} != {len(sd_keys)}"
         else:
             # Subtract the LoRA parameters from len(sd_keys)
-            assert len(sd_keys_hf) == len(sd_keys) - 4 * config.n_layer
+            assert len(sd_keys_hf) + 4 * config.n_layer == len(sd_keys) - 4 * config.n_layer
         for k in sd_keys_hf:
-            if any(k.endswith(w) for w in transposed):
+            if "attn.c_attn" in k:
+                # Special behavior for QKV 
+                # We want to unbatch them to do LoRA on some of them
+                for name, ind in zip(['q', 'k', 'v'], [0, 1, 2]):
+                    k_new = k.replace("attn.c_attn", f"attn.{name}")
+                    if 'weight' in k:
+                        p_new = sd_hf[k][:, ind*config.n_embd:(ind+1)*config.n_embd].t()
+                    else:
+                        p_new = sd_hf[k][ind*config.n_embd:(ind+1)*config.n_embd]
+                    assert p_new.shape == sd[k_new].shape
+                    with torch.no_grad():
+                        sd[k_new].copy_(p_new)
+            elif any(k.endswith(w) for w in transposed):
                 # special treatment for the Conv1D weights we need to transpose
                 assert sd_hf[k].shape[::-1] == sd[k].shape
                 with torch.no_grad():
