@@ -135,7 +135,7 @@ class SoftHebbLinear(nn.Module):
             
     def forward(self, x):
         preactivations = F.linear(x, self.weight)
-        activations = F.softmax(preactivations / self.temperature, dim=1)
+        activations = F.softmax(preactivations / self.temperature, dim=-1)
 
         if self.training:
             self._hebbian_update(x, activations, preactivations)
