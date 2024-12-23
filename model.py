@@ -149,6 +149,9 @@ class GPTConfig:
     lora_b_train: str = 'backprop'
     lora_a_init: str = 'gaussian'
     lora_b_init: str = 'zero'
+    # Hebb parameters
+    hebb_lr: float = 0.001
+    hebb_temp: float = 0.2
 
 class GPT(nn.Module):
 
@@ -243,7 +246,7 @@ class GPT(nn.Module):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
         override_args = override_args or {} # default to empty dict
         # only dropout can be overridden see more notes below
-        assert all(k == 'dropout' or k.startswith("lora") for k in override_args)
+        assert all(k == 'dropout' or k.startswith("lora") or k.startswith('hebb') for k in override_args)
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
 
@@ -277,6 +280,11 @@ class GPT(nn.Module):
             if 'lora_dropout' in override_args:
                 print(f"overriding lora_dropout to {override_args['lora_dropout']}")
                 config_args['lora_dropout'] = override_args['lora_dropout']
+            if 'hebb_lr' in override_args:
+                print(f"overriding hebb_lr to {override_args['hebb_lr']}")
+                config_args['hebb_lr'] = override_args['hebb_lr']
+                print(f"overriding hebb_temp to {override_args['hebb_temp']}")
+                config_args['hebb_temp'] = override_args['hebb_temp']
         # create a from-scratch initialized minGPT model
         config = GPTConfig(**config_args)
         model = GPT(config)
