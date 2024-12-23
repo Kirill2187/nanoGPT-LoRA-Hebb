@@ -36,6 +36,7 @@ if init_from == 'resume':
     # init from a model saved in a specific directory
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
     checkpoint = torch.load(ckpt_path, map_location=device)
+    print(checkpoint['model_args'])
     gptconf = GPTConfig(**checkpoint['model_args'])
     if gptconf.lora_rank > 0:
         print("LoRA model detected")

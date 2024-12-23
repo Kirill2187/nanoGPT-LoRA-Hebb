@@ -217,7 +217,7 @@ elif init_from.startswith('gpt2'):
     )
     model = GPT.from_pretrained(init_from, override_args)
     # read off the created config params, so we can store them into checkpoint correctly
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'lora_rank', 'lora_alpha']:
+    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size', 'lora_rank', 'lora_alpha', 'lora_matrices']:
         model_args[k] = getattr(model.config, k)
 
     if lora_rank > 0:
