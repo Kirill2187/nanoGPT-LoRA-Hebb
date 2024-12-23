@@ -45,7 +45,9 @@ class CausalSelfAttention(nn.Module):
                 a_train=config.lora_a_train,
                 b_train=config.lora_b_train,
                 a_init=config.lora_a_init,
-                b_init=config.lora_b_init
+                b_init=config.lora_b_init,
+                hebb_lr=config.hebb_lr,
+                hebb_temp=config.hebb_temp
             ))
         
         # output projection
@@ -59,7 +61,9 @@ class CausalSelfAttention(nn.Module):
             a_train=config.lora_a_train,
             b_train=config.lora_b_train,
             a_init=config.lora_a_init,
-            b_init=config.lora_b_init
+            b_init=config.lora_b_init,
+            hebb_lr=config.hebb_lr,
+            hebb_temp=config.hebb_temp
         )
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
