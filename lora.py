@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import math
+from typing import Literal
 
 # Code is based on https://github.com/danielgrittner/nanoGPT-LoRA
 
@@ -18,6 +19,10 @@ class LoRALinear(nn.Linear):
                  lora_rank: int = 0,
                  lora_alpha: float = 0.0,
                  lora_dropout: float = 0.0,
+                 a_train: Literal['backprop', 'hebb', 'frozen'] = 'bp',
+                 b_train: Literal['backprop', 'hebb', 'frozen'] = 'bp',
+                 a_init: Literal['gaussian', 'he'] = 'he',
+                 b_init: Literal['gaussian', 'zero'] = 'zero',
                 ) -> None:
         nn.Linear.__init__(
             self,
@@ -39,6 +44,12 @@ class LoRALinear(nn.Linear):
 
             self.lora_A.requires_grad = False
             self.lora_B.requires_grad = False
+            
+            self.a_init = a_init
+            self.b_init = b_init
+            
+            self.lora_A.training_method = a_train
+            self.lora_B.training_method = b_train
 
             self.reset_parameters()
 
@@ -48,8 +59,16 @@ class LoRALinear(nn.Linear):
     def reset_parameters(self) -> None:
         nn.Linear.reset_parameters(self)
         if self.is_lora():
-            torch.nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5)) # Same as nn.Linear
-            torch.nn.init.zeros_(self.lora_B)
+            if self.a_init == 'gaussian':
+                torch.nn.init.normal_(self.lora_A, mean=0.0, std=0.01)
+            elif self.a_init == 'he':
+                # Same as nn.Linear
+                torch.nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+                
+            if self.b_init == 'gaussian':
+                torch.nn.init.normal_(self.lora_B, mean=0.0, std=0.01)
+            elif self.b_init == 'zero':
+                torch.nn.init.zeros_(self.lora_B)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         x = nn.Linear.forward(self, input)
@@ -68,6 +87,7 @@ class LoRALinear(nn.Linear):
         out = nn.Linear.extra_repr(self)
         if self.is_lora():
             out += f', lora_rank={self.lora_A.shape[0]}, lora_scaling={self.lora_scaling}, lora_dropout={self.lora_dropout.p}'
+            out += f', lora_A_train={self.lora_A.training_method}, lora_B_train={self.lora_B.training_method}'
         return out
 
     def train(self, mode: bool = True) -> "LoRALinear":
@@ -87,9 +107,12 @@ class LoRALinear(nn.Linear):
         return self
 
 def get_lora_model(model: nn.Module) -> nn.Module:
+    trainable_params = 0
     for name, param in model.named_parameters():
         if "lora" in name:
-            param.requires_grad = True
+            param.requires_grad = (param.training_method == 'backprop')
         else:
             param.requires_grad = False
+        trainable_params += param.numel() if param.requires_grad else 0
+    print(f"Trainable parameters: {trainable_params}")
     return model

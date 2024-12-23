@@ -60,6 +60,10 @@ lora_rank = 0
 lora_alpha = 0.0
 lora_dropout = 0.0
 lora_matrices = ""
+lora_a_train = 'backprop'
+lora_b_train = 'backprop'
+lora_a_init = 'gaussian'
+lora_b_init = 'zero'
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
@@ -205,6 +209,11 @@ elif init_from.startswith('gpt2'):
         lora_rank=lora_rank,
         lora_alpha=lora_alpha,
         lora_dropout=lora_dropout,
+        lora_matrices=lora_matrices,
+        lora_a_train=lora_a_train,
+        lora_b_train=lora_b_train,
+        lora_a_init=lora_a_init,
+        lora_b_init=lora_b_init,
     )
     model = GPT.from_pretrained(init_from, override_args)
     # read off the created config params, so we can store them into checkpoint correctly

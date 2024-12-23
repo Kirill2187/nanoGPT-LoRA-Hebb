@@ -33,7 +33,6 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
-        self.lora_matrices = config.lora_matrices
         
         for name in 'qkv':
             setattr(self, f'{name}', LoRALinear(
@@ -42,7 +41,11 @@ class CausalSelfAttention(nn.Module):
                 bias=config.bias,
                 lora_rank=config.lora_rank if name in config.lora_matrices else 0,
                 lora_alpha=config.lora_alpha,
-                lora_dropout=config.lora_dropout
+                lora_dropout=config.lora_dropout,
+                a_train=config.lora_a_train,
+                b_train=config.lora_b_train,
+                a_init=config.lora_a_init,
+                b_init=config.lora_b_init
             ))
         
         # output projection
@@ -52,7 +55,11 @@ class CausalSelfAttention(nn.Module):
             bias=config.bias,
             lora_rank=config.lora_rank if 'o' in config.lora_matrices else 0,
             lora_alpha=config.lora_alpha,
-            lora_dropout=config.lora_dropout
+            lora_dropout=config.lora_dropout,
+            a_train=config.lora_a_train,
+            b_train=config.lora_b_train,
+            a_init=config.lora_a_init,
+            b_init=config.lora_b_init
         )
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
@@ -138,6 +145,10 @@ class GPTConfig:
     lora_alpha: float = 0.0
     lora_dropout: float = 0.0
     lora_matrices: str = "qv"
+    lora_a_train: str = 'backprop'
+    lora_b_train: str = 'backprop'
+    lora_a_init: str = 'gaussian'
+    lora_b_init: str = 'zero'
 
 class GPT(nn.Module):
 
@@ -252,9 +263,17 @@ class GPT(nn.Module):
             print(f"overriding dropout rate to {override_args['dropout']}")
             config_args['dropout'] = override_args['dropout']
         if 'lora_rank' in override_args:
-            print(f"overriding lora_rank and lora_alpha to {override_args['lora_rank']}")
+            print(f"overriding lora_rank and lora_alpha to {override_args['lora_rank']} and {override_args['lora_alpha']}")
             config_args['lora_rank'] = override_args['lora_rank']
             config_args['lora_alpha'] = override_args['lora_alpha']
+            print(f"overriding lora_matrices to {override_args['lora_matrices']}")
+            config_args['lora_matrices'] = override_args['lora_matrices']
+            print(f"overriding lora_a_train and lora_b_train to {override_args['lora_a_train']} and {override_args['lora_b_train']}")
+            config_args['lora_a_train'] = override_args['lora_a_train']
+            config_args['lora_b_train'] = override_args['lora_b_train']
+            print(f"overriding lora_a_init and lora_b_init to {override_args['lora_a_init']} and {override_args['lora_b_init']}")
+            config_args['lora_a_init'] = override_args['lora_a_init']
+            config_args['lora_b_init'] = override_args['lora_b_init']
             if 'lora_dropout' in override_args:
                 print(f"overriding lora_dropout to {override_args['lora_dropout']}")
                 config_args['lora_dropout'] = override_args['lora_dropout']
@@ -281,7 +300,7 @@ class GPT(nn.Module):
             assert target_keys == len(sd_keys), f"mismatched keys: {target_keys} != {len(sd_keys)}"
         else:
             # Subtract the LoRA parameters from len(sd_keys)
-            assert len(sd_keys_hf) + 4 * config.n_layer == len(sd_keys) - 4 * config.n_layer
+            assert len(sd_keys_hf) + (2 * len(config.lora_matrices)) * config.n_layer == len(sd_keys) - 4 * config.n_layer
         for k in sd_keys_hf:
             if "attn.c_attn" in k:
                 # Special behavior for QKV 
