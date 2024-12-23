@@ -154,6 +154,7 @@ class SoftHebbLinear(nn.Module):
         dw = yx - yu.view(-1, 1) * self.weight
         
         self.weight += self.learning_rate * dw
+        self.weight /= torch.norm(self.weight, dim=1, keepdim=True, p=2)
 
 
 def get_lora_model(model: nn.Module) -> nn.Module:
@@ -169,26 +170,26 @@ def get_lora_model(model: nn.Module) -> nn.Module:
 
 
 if __name__ == "__main__":    
-    layer = SoftHebbLinear(2, 3, learning_rate=0.01)
+    layer = SoftHebbLinear(2, 4, learning_rate=0.1)
     torch.nn.init.normal_(layer.weight, mean=0.0, std=1)
     
     import numpy as np
     
     n = 1000
     data = []
-    centers = np.array([[-2, 0], [1, 0], [0, 2], [0, -1]])
+    centers = np.array([[-1, 0], [1, 0], [0, 1], [0, -1]])
     for center in centers:
-        data.append(center + np.random.randn(n, 2) * 2)
+        data.append(center + np.random.randn(n, 2) * 10)
     
     data = np.concatenate(data)
-    data -= data.mean(axis=0)
-    data /= data.std(axis=0)
+    data -= data.mean()
+    data /= data.std()
     
     data = torch.tensor(data, dtype=torch.float32)
     
     batch_size = 8
     norms = []
-    for _ in range(1000):
+    for _ in range(10000):
         layer(data[torch.randint(0, len(data), (batch_size,))])
         norms.append(np.linalg.norm(layer.weight.detach().numpy(), axis=1))
         
@@ -197,8 +198,4 @@ if __name__ == "__main__":
         print(layer(torch.tensor(center, dtype=torch.float32).unsqueeze(0)))
         
     print(layer.weight)
-
-    from matplotlib import pyplot as plt
-    plt.plot(np.array(norms))
-    plt.show()    
     
