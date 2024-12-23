@@ -135,12 +135,12 @@ class SoftHebbLinear(nn.Module):
             
     def forward(self, x):
         preactivations = F.linear(x, self.weight)
-        activations = F.softmax(preactivations / self.temperature, dim=-1)
 
         if self.training:
+            activations = F.softmax(preactivations / self.temperature, dim=-1)
             self._hebbian_update(x, activations, preactivations)
 
-        return activations
+        return preactivations
     
     @torch.no_grad()
     def _hebbian_update(self, x, activations, preactivations):        
@@ -151,8 +151,8 @@ class SoftHebbLinear(nn.Module):
         yx = torch.matmul(activations.t(), x)
         yu = torch.multiply(activations, preactivations)
         yu = torch.sum(yu.t(), dim=1).unsqueeze(1)
-        dw = yx - yu.view(-1, 1) * self.weight
-        
+        dw = (yx - yu.view(-1, 1) * self.weight) / x.size(0)
+                
         self.weight += self.learning_rate * dw
         self.weight /= torch.norm(self.weight, dim=1, keepdim=True, p=2)
 
@@ -170,8 +170,9 @@ def get_lora_model(model: nn.Module) -> nn.Module:
 
 
 if __name__ == "__main__":    
-    layer = SoftHebbLinear(2, 4, learning_rate=0.1)
+    layer = SoftHebbLinear(2, 4, learning_rate=1)
     torch.nn.init.normal_(layer.weight, mean=0.0, std=1)
+    layer.train()
     
     import numpy as np
     
@@ -179,7 +180,7 @@ if __name__ == "__main__":
     data = []
     centers = np.array([[-1, 0], [1, 0], [0, 1], [0, -1]])
     for center in centers:
-        data.append(center + np.random.randn(n, 2) * 10)
+        data.append(center + np.random.randn(n, 2) * 100)
     
     data = np.concatenate(data)
     data -= data.mean()
