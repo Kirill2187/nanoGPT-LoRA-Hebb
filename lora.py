@@ -71,7 +71,11 @@ class LoRALinear(nn.Linear):
         nn.Linear.reset_parameters(self)
         if self.is_lora():
             if self.a_init == 'gaussian':
-                torch.nn.init.normal_(self.lora_A.weight, mean=0.0, std=0.01)
+                if self.lora_A.weight.training_method == 'hebb':
+                    std = 3 * math.sqrt(math.pi / 2 / self.lora_A.weight.shape[1])
+                    torch.nn.init.normal_(self.lora_A.weight, mean=0.0, std=std)
+                else:
+                    torch.nn.init.normal_(self.lora_A.weight, mean=0.0, std=0.01)
             elif self.a_init == 'he':
                 # Same as nn.Linear
                 torch.nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
@@ -152,8 +156,11 @@ class SoftHebbLinear(nn.Module):
         yu = torch.multiply(activations, preactivations)
         yu = torch.sum(yu.t(), dim=1).unsqueeze(1)
         dw = (yx - yu.view(-1, 1) * self.weight) / x.size(0)
-                
-        self.weight += self.learning_rate * dw
+        
+        rad = torch.norm(self.weight, dim=1).view(-1, 1)
+        lr = self.learning_rate * torch.clip(torch.abs(rad - 1) ** 0.5, 0, 1)
+        
+        self.weight += lr * dw
 
 
 def get_lora_model(model: nn.Module) -> nn.Module:
@@ -168,15 +175,15 @@ def get_lora_model(model: nn.Module) -> nn.Module:
     return model
 
 if __name__ == "__main__":    
-    layer = SoftHebbLinear(2, 4, learning_rate=0.001, temperature=1)
-    torch.nn.init.normal_(layer.weight, mean=0.0, std=0.01)
+    layer = SoftHebbLinear(2, 4, learning_rate=0.001)
+    torch.nn.init.normal_(layer.weight, mean=0.0, std=10)
     layer.train()
     
     import numpy as np
     
     n = 1000
     data = []
-    centers = np.array([[1, 0], [-10, 0], [0, 1], [0, -10]])
+    centers = np.array([[1, 0], [-10, 0], [0, 1], [0, -20]])
     for center in centers:
         data.append(center + np.random.randn(n, 2) * 10)
     data = np.concatenate(data)
@@ -184,8 +191,8 @@ if __name__ == "__main__":
     
     norms = []
     w = []
-    batch_size = 4
-    for _ in range(10000):
+    batch_size = 1
+    for _ in range(1000):
         w.append(layer.weight[:, 0].clone().flatten().numpy())
         layer(data[torch.randint(0, len(data), (batch_size,))])
         norms.append(torch.norm(layer.weight, dim=1).numpy())
