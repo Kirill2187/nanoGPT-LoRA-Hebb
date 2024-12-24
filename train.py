@@ -299,6 +299,8 @@ local_iter_num = 0 # number of iterations in the lifetime of this process
 no_improvement_iters = 0 # for early stopping
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
+trainable_params = sum(p.numel() for p in raw_model.parameters() if p.requires_grad)
+
 while True:
 
     # determine and set the learning rate for this iteration
@@ -353,16 +355,18 @@ while True:
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
         # backward pass, with gradient scaling if training in fp16
-        scaler.scale(loss).backward()
+        if trainable_params > 0:
+            scaler.scale(loss).backward()
     # clip the gradient
-    if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    # step the optimizer and scaler if training in fp16
-    scaler.step(optimizer)
-    scaler.update()
-    # flush the gradients as soon as we can, no need for this memory anymore
-    optimizer.zero_grad(set_to_none=True)
+    if trainable_params > 0:
+        if grad_clip != 0.0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        # step the optimizer and scaler if training in fp16
+        scaler.step(optimizer)
+        scaler.update()
+        # flush the gradients as soon as we can, no need for this memory anymore
+        optimizer.zero_grad(set_to_none=True)
 
     # timing and logging
     t1 = time.time()
