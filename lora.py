@@ -25,7 +25,8 @@ class LoRALinear(nn.Linear):
                  b_init: Literal['gaussian', 'zero'] = 'zero',
                  # Hebb parameters
                  hebb_lr: float = 0.001,
-                 hebb_temp: float = 0.2
+                 hebb_temp: float = 0.2,
+                 anti_hebbian_term: bool = True,
                 ) -> None:
         nn.Linear.__init__(
             self,
@@ -44,12 +45,12 @@ class LoRALinear(nn.Linear):
             self.lora_scaling = lora_alpha / lora_rank
             
             if a_train == 'hebb':
-                self.lora_A = SoftHebbLinear(in_features, lora_rank, dtype=dtype, learning_rate=hebb_lr, temperature=hebb_temp)
+                self.lora_A = SoftHebbLinear(in_features, lora_rank, dtype=dtype, learning_rate=hebb_lr, temperature=hebb_temp, anti_hebbian_term=anti_hebbian_term)
             else:
                 self.lora_A = nn.Linear(in_features, lora_rank, bias=False, device=device, dtype=dtype)
                 
             if b_train == 'hebb':
-                self.lora_B = SoftHebbLinear(lora_rank, out_features, dtype=dtype, learning_rate=hebb_lr, temperature=hebb_temp)
+                self.lora_B = SoftHebbLinear(lora_rank, out_features, dtype=dtype, learning_rate=hebb_lr, temperature=hebb_temp, anti_hebbian_term=anti_hebbian_term)
             else:
                 self.lora_B = nn.Linear(lora_rank, out_features, bias=False, device=device, dtype=dtype)
 
@@ -128,12 +129,14 @@ class SoftHebbLinear(nn.Module):
             learning_rate: float = 0.001,
             temperature: float = 0.2,
             dtype=None,
+            anti_hebbian_term: bool = True,
     ) -> None:    
         super(SoftHebbLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.learning_rate = learning_rate
         self.temperature = temperature
+        self.anti_hebbian_term = anti_hebbian_term
         
         self.weight = nn.Parameter(torch.empty((out_features, in_features), dtype=dtype), requires_grad=False)
             
@@ -157,8 +160,16 @@ class SoftHebbLinear(nn.Module):
         yu = torch.sum(yu.t(), dim=1).unsqueeze(1)
         dw = (yx - yu.view(-1, 1) * self.weight) / x.size(0)
         
+        if self.anti_hebbian_term and x.size(0) == 1:
+            winner_index = torch.argmax(preactivations, dim=-1)
+            dw *= -1
+            dw[winner_index, :] *= -1
+        
         rad = torch.norm(self.weight, dim=1).view(-1, 1)
         lr = self.learning_rate * torch.clip(torch.abs(rad - 1) ** 0.5, 0, 1)
+        lr = self.learning_rate * torch.clip(torch.abs(rad - 1) ** 0.5, 0, 1)
+        
+        lr = self.learning_rate * torch.clip(torch.abs(rad - 1) ** 0.5, 0, 1)       
         
         self.weight += lr * dw
 
@@ -183,30 +194,34 @@ if __name__ == "__main__":
     
     n = 1000
     data = []
-    centers = np.array([[1, 0], [-10, 0], [0, 1], [0, -20]])
-    for center in centers:
-        data.append(center + np.random.randn(n, 2) * 10)
+    centers = np.array([[-2, 0], [2, 3], [5, -1], [-2, -2]])
+    targets = []
+    for i, center in enumerate(centers):
+        data.append(center + np.random.randn(n, 2) * 0.3)
+        targets.extend([i] * n)
+    targets = torch.tensor(targets, dtype=torch.long)
     data = np.concatenate(data)
     data = torch.tensor(data, dtype=torch.float32)
     
     norms = []
     w = []
     batch_size = 1
-    for _ in range(1000):
+    for _ in range(5000):
         w.append(layer.weight[:, 0].clone().flatten().numpy())
         layer(data[torch.randint(0, len(data), (batch_size,))])
         norms.append(torch.norm(layer.weight, dim=1).numpy())
 
     layer.eval()
-    for center in centers:
-        print(layer(torch.tensor(center, dtype=torch.float32).unsqueeze(0)))
-        
-    print(layer.weight)
     
     import matplotlib.pyplot as plt
-    plt.plot(norms)
-    plt.show()
+    fig, axs = plt.subplots(2, 2)
+        
+    axs[0, 0].plot(norms)
+    axs[0, 0].set_ylim([0, 2])
+    axs[0, 1].set_yscale('log')
+    axs[1, 0].plot(w)
+    axs[1, 0].set_ylim([-2, 2])
+    axs[1, 1].scatter(data[:, 0], data[:, 1], c=np.argmax(layer(data), axis=1).detach().numpy())
     
-    plt.plot(w)
     plt.show()
     
